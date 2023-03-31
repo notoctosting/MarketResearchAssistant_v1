@@ -14,7 +14,7 @@ load_dotenv()
 newsapi_key = '6e8daddb54064df3ab4acbe28adea707'
 
 
-openai_api_key = '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'
+openai_api_key = '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'
 
 def collect_news_data(company_name, newsapi_key, start_date, end_date):
     url = 'https://newsapi.org/v2/everything?q={}&from={}&to={}&sortBy=relevancy&apiKey={}'.format(company_name, start_date, end_date, newsapi_key)
@@ -60,10 +60,10 @@ def generate_summary(news_articles, openai_api_key, company_name):
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "You are a helpful assistant that accurately summarizes news articles very briefly (< 40 words)"},
+            {"role": "system", "content": "You are a helpful assistant that accurately summarizes news articles very briefly - each summary representing the sentiment of each article accurately  (< 75 words)"},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=40 * len(news_articles),
+        max_tokens=70 * len(news_articles),
         n=1,
         stop=None,
         temperature=0.76
@@ -80,12 +80,19 @@ def analyze_sentiment(text):
 
 
 def combine_data(news_articles, stock_data):
+    print("News articles in combine_data():")
+    for article in news_articles:
+        print(article)
     combined_data = stock_data.copy()
     combined_data['Date'] = pd.to_datetime(combined_data['Date']).dt.date
 
-    news_dates = [datetime.datetime.strptime(article['publishedAt'], '%Y-%m-%dT%H:%M:%SZ').date() for article in news_articles]
-    news_summaries = [article.get('summary', '') for article in news_articles]
-    news_sentiments = [article['sentiment'] for article in news_articles]
+    news_dates, news_summaries, news_sentiments = [], [], []
+
+    for article in news_articles:
+        if 'publishedAt' in article and 'summary' in article and 'sentiment' in article:
+            news_dates.append(article['publishedAt'])
+            news_summaries.append(article['summary'])
+            news_sentiments.append(article['sentiment'])
 
     news_df = pd.DataFrame({'Date': news_dates, 'Summary': news_summaries, 'Sentiment': news_sentiments})
     combined_data = combined_data.merge(news_df, on='Date', how='outer')
@@ -129,11 +136,11 @@ def plot_data(combined_data):
     fig.tight_layout()
     plt.show()
 
-def generate_insights(insights, openai_api_key):
+def generate_insights(insights, openai_api_key, company_name):
     openai.api_key = openai_api_key
     prompt = "Based on the average sentiment of {}, with {} positive days and {} negative days, provide insights and recommendations for investors and analysts about {}.".format(insights['average_sentiment'], insights['positive_days'], insights['negative_days'], company_name)
     response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model="gpt-4",
         messages=[
             {"role": "system", "content": "You are a helpful assistant that provides insights and recommendations based on sentiment analysis."},
             {"role": "user", "content": prompt}
@@ -178,13 +185,17 @@ def main():
     for article, summary in zip(news_articles, summaries):
         article['summary'] = summary
         article['sentiment'] = analyze_sentiment(summary)
+    print("News articles with summaries and sentiment:")
+    for article in news_articles:
+        print(article)
+
 
     combined_data = combine_data(news_articles, stock_data)
     combined_data = rolling_sentiment(combined_data)
     insights = analyze_data(combined_data)
     plot_data(combined_data)
     plot_corr_heatmap(combined_data)
-    generated_insights = generate_insights(insights, openai_api_key)
+    generated_insights = generate_insights(insights, openai_api_key, company_name)
 
     print("\nGenerated Insights:")
     print(generated_insights)
